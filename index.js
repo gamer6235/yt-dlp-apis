@@ -19,8 +19,7 @@ app.get('/api/download', (req, res) => {
         return res.status(400).json({ status: "error", message: "YouTube URL parameter required." });
     }
 
-    // Android client & user-agent bypass
-    const command = `yt-dlp -J --extractor-args "youtube:player_client=android,web" --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${videoUrl}"`;
+    const command = `yt-dlp -J --extractor-args "youtube:player_client=android,web" --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "${videoUrl}"`;
 
     exec(command, { maxBuffer: 1024 * 1024 * 10 }, (error, stdout, stderr) => {
         if (error) {
@@ -30,15 +29,18 @@ app.get('/api/download', (req, res) => {
         try {
             const output = JSON.parse(stdout);
             
-            const formats = (output.formats || []).map(f => ({
-                format_id: f.format_id,
-                ext: f.ext,
-                resolution: f.resolution || `${f.width || ''}x${f.height || ''}`,
-                filesize_mb: f.filesize ? parseFloat((f.filesize / (1024 * 1024)).toFixed(2)) : null,
-                has_audio: f.acodec !== 'none',
-                has_video: f.vcodec !== 'none',
-                download_url: f.url
-            }));
+            // Filter only valid video & audio formats (sb/mhtml/storyboards തടയുന്നു)
+            const formats = (output.formats || [])
+                .filter(f => f.ext !== 'mhtml' && f.protocol !== 'm3u8_native' && !f.format_id.startsWith('sb'))
+                .map(f => ({
+                    format_id: f.format_id,
+                    ext: f.ext,
+                    resolution: f.resolution || (f.height ? `${f.height}p` : 'Audio Only'),
+                    filesize_mb: f.filesize ? parseFloat((f.filesize / (1024 * 1024)).toFixed(2)) : (f.filesize_approx ? parseFloat((f.filesize_approx / (1024 * 1024)).toFixed(2)) : null),
+                    has_audio: f.acodec !== 'none',
+                    has_video: f.vcodec !== 'none',
+                    download_url: f.url
+                }));
 
             res.json({
                 status: "success",
